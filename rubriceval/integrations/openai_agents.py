@@ -134,6 +134,29 @@ def _input_text(run_input: Any) -> str:
     return _text(run_input)
 
 
+def _approval_trace(item: Any) -> tuple[str, TraceStep]:
+    """Represent a pending tool approval without marking the tool as executed."""
+    raw = _field(item, "raw_item", item)
+    name = _field(item, "qualified_name") or _tool_name(item, raw) or "unknown"
+    call_id = _field(item, "call_id") or _field(raw, "call_id") or _field(raw, "id")
+    namespace = _field(item, "tool_namespace") or _field(raw, "namespace")
+    metadata: dict[str, Any] = {
+        "tool": str(name),
+        "arguments": _tool_arguments(raw),
+        "approval_required": True,
+    }
+    if call_id is not None:
+        metadata["call_id"] = str(call_id)
+    if namespace is not None:
+        metadata["tool_namespace"] = str(namespace)
+    key = f"call:{call_id}" if call_id is not None else f"object:{id(item)}"
+    return key, TraceStep(
+        type="llm_call",
+        content=f"[tool approval required: {name}]",
+        metadata=metadata,
+    )
+
+
 def from_agents_sdk(result: Any, **kwargs: Any) -> AgentTestCase:
     """Build an :class:`AgentTestCase` from an OpenAI Agents SDK result.
 
@@ -152,6 +175,7 @@ def from_agents_sdk(result: Any, **kwargs: Any) -> AgentTestCase:
     tool_calls: list[ToolCall] = []
     by_id: dict[str, ToolCall] = {}
     trace: list[TraceStep] = []
+    seen_approvals: set[str] = set()
 
     for item in new_items or []:
         item_type = _field(item, "type", "")
@@ -209,6 +233,18 @@ def from_agents_sdk(result: Any, **kwargs: Any) -> AgentTestCase:
             summary = _text(_field(raw, "summary", ""))
             if summary:
                 trace.append(TraceStep(type="thought", content=summary))
+
+        elif item_type == "tool_approval_item":
+            key, step = _approval_trace(item)
+            if key not in seen_approvals:
+                trace.append(step)
+                seen_approvals.add(key)
+
+    for interruption in _field(result, "interruptions", []) or []:
+        key, step = _approval_trace(interruption)
+        if key not in seen_approvals:
+            trace.append(step)
+            seen_approvals.add(key)
 
     metadata = {"source": "openai_agents"}
     metadata.update(kwargs.pop("metadata", None) or {})

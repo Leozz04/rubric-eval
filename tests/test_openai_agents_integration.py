@@ -177,6 +177,41 @@ def test_from_agents_sdk_captures_handoff_boundaries():
     assert case.trace[-1].metadata == {"tool": "transfer_to_billing"}
 
 
+def test_from_agents_sdk_captures_pending_tool_approval_without_execution():
+    approval = Obj(
+        type="tool_approval_item",
+        tool_name="delete_file",
+        tool_namespace="filesystem",
+        raw_item=Obj(
+            type="function_call",
+            name="delete_file",
+            arguments='{"path": "/tmp/report.txt"}',
+            call_id="approval_1",
+        ),
+    )
+    result = Obj(
+        input="Delete the report",
+        new_items=[approval],
+        interruptions=[approval],
+        final_output=None,
+    )
+
+    case = from_agents_sdk(result)
+
+    assert case.tool_calls == []
+    assert case.actual_output == ""
+    assert len(case.trace) == 1
+    assert case.trace[0].type == "llm_call"
+    assert case.trace[0].content == "[tool approval required: delete_file]"
+    assert case.trace[0].metadata == {
+        "tool": "delete_file",
+        "arguments": {"path": "/tmp/report.txt"},
+        "approval_required": True,
+        "call_id": "approval_1",
+        "tool_namespace": "filesystem",
+    }
+
+
 def test_from_agents_sdk_requires_new_items_shape():
     try:
         from_agents_sdk(Obj(final_output="done"))
