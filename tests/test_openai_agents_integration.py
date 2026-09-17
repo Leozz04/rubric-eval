@@ -181,6 +181,7 @@ def test_from_agents_sdk_captures_pending_tool_approval_without_execution():
     approval = Obj(
         type="tool_approval_item",
         tool_name="delete_file",
+        qualified_name="filesystem.delete_file",
         tool_namespace="filesystem",
         raw_item=Obj(
             type="function_call",
@@ -202,9 +203,9 @@ def test_from_agents_sdk_captures_pending_tool_approval_without_execution():
     assert case.actual_output == ""
     assert len(case.trace) == 1
     assert case.trace[0].type == "llm_call"
-    assert case.trace[0].content == "[tool approval required: delete_file]"
+    assert case.trace[0].content == "[tool approval required: filesystem.delete_file]"
     assert case.trace[0].metadata == {
-        "tool": "delete_file",
+        "tool": "filesystem.delete_file",
         "arguments": {"path": "/tmp/report.txt"},
         "approval_required": True,
         "call_id": "approval_1",
